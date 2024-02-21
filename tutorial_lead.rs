@@ -14,16 +14,18 @@ use oort_api::prelude::*;
 
 const BULLET_SPEED: f64 = 1000.0; // m/s
 
-// TODO: 
-
 pub struct Ship {
-    prev_angle: f64
+    prev_angle: f64,
+    prev_angle_diff: f64,
+    sum_err: f64
 }
 
 impl Ship {
     pub fn new() -> Ship {
         Ship{
-            prev_angle: 0.0
+            prev_angle: 0.0,
+            prev_angle_diff: 0.0,
+            sum_err: 0.0
         }
     }
 
@@ -80,19 +82,22 @@ impl Ship {
     }
 
     pub fn pid(&mut self, angle: f64) -> f64 {
-        let k_p = 50.0;
+        let k_p = 45.0;
+        let k_i = -250.0;
         let k_d = 50000.0;
 
-        let d_err = angle - self.prev_angle;
-        self.prev_angle = angle;
+        let d_err = angle - self.prev_angle_diff;
+        self.sum_err += d_err * TICK_LENGTH;
+        self.prev_angle_diff = angle;
 
-        debug!("Change in error: {}", d_err);
+        debug!("Sum err: {}", self.sum_err);
 
-        (k_p * angle) + (k_d * d_err * TICK_LENGTH)
+        (k_p * angle) + (k_d * d_err * TICK_LENGTH) + (k_i * self.sum_err)
     }
 
     pub fn tick(&mut self) {
 
+        // Draw current heading
         draw_line(position(), position() + Vec2::new(1000.0 * heading().cos(), 1000.0 * heading().sin()), 0x0000ff);
 
         // Calculate the travel time of the bullet
@@ -105,12 +110,16 @@ impl Ship {
         // Calculate desired angle, and angular diff
         let desired_angle = (lead_target - position()).angle();
         let angle = angle_diff(heading(), desired_angle);
-        debug!("Delta Angle: {}", angle);
 
-        // turn(angle*50.0);
-        torque(self.pid(angle));
+        // Add angular velocity to shoot ahead
+        let angular_vel = (desired_angle - self.prev_angle) * TICK_LENGTH;
+        self.prev_angle = desired_angle;
 
-        if angle.abs() < 0.025 
+        debug!("Angular velocity: {}", angular_vel);
+
+        torque(self.pid(angle + angular_vel));
+
+        if angle.abs() < 0.015
         {
             fire(0);
         }
